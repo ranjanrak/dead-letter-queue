@@ -42,16 +42,33 @@ func main() {
     headers.Add("content-type", "application/x-www-form-urlencoded")
     
     // Queue message params
-    queueMsg := map[string]interface{}{
-        "url":       rURL,
-        "reqMethod": "POST",
-        "postParam": params,
-        "headers":   headers,
+    queueMsg := deadletterqueue.InputMsg{
+        Url:       rURL,
+        ReqMethod: "POST",
+        PostParam: params,
+        Headers:   headers,
     }
     
     // worker that adds message to redis queue
     redisQueue.AddMessage(queueMsg)
     
-    // worker that executes all available queues
+    // worker that executes normal queue messages
     redisQueue.ExecuteQueue()
+
+    // worker that executes only dead letter queue messages
+    redisQueue.ExecuteDeadQueue()
 }
+```
+## Sample response
+`redisQueue.GetQueue("queue")`: List all message available in the queue
+```
+[{https://api.kite.trade/orders/regular POST map[exchange:[BSE] quantity:[3] tradingsymbol:[ONGC] 
+transaction_type:[BUY]] map[Authorization:[token api_key:access_token] 
+Content-Type:[application/x-www-form-urlencoded] X-Kite-Version:[3]]} 
+{https://api.kite.trade/orders/regular 
+POST map[exchange:[NSE] quantity:[5] tradingsymbol:[SBIN] transaction_type:[BUY]] map[Authorization:
+[api_key:access_token] Content-Type:[application/x-www-form-urlencoded] X-Kite-Version:[3]]}
+{https://api.kite.trade/gtt/triggers POST map[exchange:[NSE] quantity:[10] tradingsymbol:[WIPRO] 
+transaction_type:[SELL] trigger_values[702.0]] map[Authorization:[token api_key:access_token] 
+Content-Type:[application/x-www-form-urlencoded] X-Kite-Version:[3]]}
+```
