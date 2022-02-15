@@ -1,5 +1,5 @@
 # dead-letter-queue
-Tiny go package for dead letter queue based on redis.
+Go package for HTTP request queue with dead letter queue management/retry. Based on go-redis.
 
 ## Installation
 ```
@@ -17,7 +17,7 @@ import (
 	deadletterqueue "github.com/ranjanrak/dead-letter-queue"
 )
 func main() {
-    // Create new queue instance
+    // Create new HTTP request queue instance
     redisQueue := deadletterqueue.New(deadletterqueue.ClientParam{
         RedisAddr: "",
         RedisPasw: "",
@@ -27,31 +27,49 @@ func main() {
     })
     
     rURL := "https://api.kite.trade/orders/regular"
+
+    // Add post params 
     params := url.Values{}
-    
     params.Add("exchange", "NSE")
     params.Add("tradingsymbol", "SBIN")
     params.Add("transaction_type", "BUY")
     params.Add("quantity", "3")
-    
+
+    // Add request header
     var headers http.Header
     headers = map[string][]string{}
-    
     headers.Add("x-kite-version", "3")
     headers.Add("authorization", "token api_key:access_token")
     headers.Add("content-type", "application/x-www-form-urlencoded")
     
     // Queue message params
-    queueMsg := map[string]interface{}{
-        "url":       rURL,
-        "reqMethod": "POST",
-        "postParam": params,
-        "headers":   headers,
+    queueMsg := deadletterqueue.InputMsg{
+        Url:       rURL,
+        ReqMethod: "POST",
+        PostParam: params,
+        Headers:   headers,
     }
     
-    // worker that adds message to redis queue
+    // worker that adds HTTP request message to redis queue
     redisQueue.AddMessage(queueMsg)
     
-    // worker that executes all available queues
+    // worker that executes queue messages
     redisQueue.ExecuteQueue()
+
+    // worker that executes only dead letter queue messages
+    redisQueue.ExecuteDeadQueue()
 }
+```
+## Sample response
+`redisQueue.GetQueue("queue")`: List all message available in the queue
+```
+[{https://api.kite.trade/orders/regular POST map[exchange:[BSE] quantity:[3] tradingsymbol:[ONGC] 
+transaction_type:[BUY]] map[Authorization:[token api_key:access_token] 
+Content-Type:[application/x-www-form-urlencoded] X-Kite-Version:[3]]} 
+{https://api.kite.trade/orders/regular 
+POST map[exchange:[NSE] quantity:[5] tradingsymbol:[SBIN] transaction_type:[BUY]] map[Authorization:
+[api_key:access_token] Content-Type:[application/x-www-form-urlencoded] X-Kite-Version:[3]]}
+{https://api.kite.trade/gtt/triggers POST map[exchange:[NSE] quantity:[10] tradingsymbol:[WIPRO] 
+transaction_type:[SELL] trigger_values[702.0]] map[Authorization:[token api_key:access_token] 
+Content-Type:[application/x-www-form-urlencoded] X-Kite-Version:[3]]}
+```
