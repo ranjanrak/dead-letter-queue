@@ -29,7 +29,7 @@ func main() {
 		DeadHTTP:  []int{400, 403, 429, 500, 502},
 	})
     // Request message
-	queueMsg := deadletterqueue.InputMsg{
+    queueMsg := deadletterqueue.InputMsg{
 		Name:      "Place TCS Order",
 		Url:       "https://api.kite.trade/orders/regular",
 		ReqMethod: "POST",
