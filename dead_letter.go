@@ -143,19 +143,33 @@ func (c *Client) RawExecute(msgParam InputMsg, qName string) {
 
 	res, err := http.DefaultClient.Do(req)
 	if err != nil {
-		log.Fatalf("Error making HTTP request : %v", err)
+		log.Printf("Error making HTTP request : %v", err)
 	}
 	defer res.Body.Close()
 
+	body, err := ioutil.ReadAll(res.Body)
+	if err != nil {
+		log.Printf("Error reading response body %v", err)
+	}
+	// Store response body data
+	c.MessageResponse(msgParam.Name, string(body))
+
 	c.HandleDeadQueue(res, msgParam, qName)
 
-	body, _ := ioutil.ReadAll(res.Body)
 	// Add response body data to redis to be fetched by another worker
 	// To:do- Have better key hash to store successful response
 	successKey := msgParam.Url + msgParam.ReqMethod
 	err = c.redisCli.Set(c.ctx, successKey, string(body), 0).Err()
 	if err != nil {
-		log.Fatalf("Error in successKey set : %v", err)
+		log.Printf("Error updating successKey for request : %v", err)
+	}
+}
+
+// MessageResponse stores response body of the request body
+func (c *Client) MessageResponse(msgName string, response string) {
+	err := c.redisCli.Set(c.ctx, msgName, response, 0).Err()
+	if err != nil {
+		log.Printf("Error updating response update for the req message %s", msgName)
 	}
 }
 
@@ -179,6 +193,12 @@ func (c *Client) HandleDeadQueue(res *http.Response, msgParam InputMsg, qName st
 	if err != nil {
 		log.Printf("Error adding to %s queue : %v", qName, err)
 	}
+}
+
+// Fetch message response status
+func (c *Client) MessageStatus(msgName string) (string, error) {
+	val, err := c.redisCli.Get(c.ctx, msgName).Result()
+	return val, err
 }
 
 // Delete message by message name from request queue
@@ -241,7 +261,7 @@ func (c *Client) GetQueue(qname string) []InputMsg {
 	if err != nil {
 		// handle empty redis GET
 		if val != "" {
-			log.Fatalf("Error fetching queue : %v", err)
+			log.Printf("Error fetching queue : %v", err)
 		}
 	}
 	err = json.Unmarshal([]byte(val), &queueSlice)
