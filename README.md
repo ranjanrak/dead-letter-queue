@@ -14,13 +14,14 @@ go get -u github.com/ranjanrak/dead-letter-queue
 - [Usage](#usage)
 - [Request](#request)
   - [Adding message](#adding-message)
-  - [Delete message from the request queue](#delete-message-from-the-dead-letter-queue)
+  - [Delete message from the request queue](#delete-message-from-the-request-queue)
   - [Delete message from the dead letter queue](#delete-message-from-the-dead-letter-queue)
   - [Clear request queue](#clear-request-queue)
   - [Clear deadletter queue](#clear-deadletter-queue)
 - [Execute queue](#executerun-message-queue)
   - [Execute request queue](#execute-request-queue)
   - [Execute deadletter queue](#execute-deadletter-queue)
+- [Fetch message response status](#fetch-message-response-status)
 - [Sample response](#sample-response)
 
 ## Usage
@@ -67,7 +68,7 @@ func main() {
 	// worker that adds message to http queue
 	err := httpQueue.AddMessage(queueMsg)
 	if err != nil {
-		log.Fatalf("Error adding msg in the request queue : %v", err)
+		fmt.Printf("Error adding msg in the request queue : %v", err)
 	}
 
 	// worker that executes http request queues
@@ -109,7 +110,7 @@ queueMsg := deadletterqueue.InputMsg{
 }
 err := httpQueue.AddMessage(queueMsg)
 if err != nil {
-    log.Fatalf("Error adding msg in the request queue : %v", err)
+    fmt.Printf("Error adding msg in the request queue : %v", err)
 }
 ```
 
@@ -120,7 +121,7 @@ Delete request message available in HTTP queue before it's execution with the in
 ```go
 err := httpQueue.DeleteReqMsg("Place TCS Order")
 if err != nil {
-    log.Fatalf("Error removing msg from the request msg queue : %v", err)
+    fmt.Printf("Error removing msg from the request msg queue : %v", err)
 }
 ```
 
@@ -131,7 +132,7 @@ Delete message by the input message `Name` from the Deadletter queue.
 ```go
 err := httpQueue.DeleteDeadMsg("Place TCS Order")
 if err != nil {
-    log.Fatalf("Error removing msg from the deadletter queue : %v", err)
+    fmt.Printf("Error removing msg from the deadletter queue : %v", err)
 }
 ```
 
@@ -142,7 +143,7 @@ Clear complete request message queue.
 ```go
 err := httpQueue.ClearReqQueue()
 if err != nil {
-    log.Fatalf("Error clearing the request queue : %v", err)
+    fmt.Printf("Error clearing the request queue : %v", err)
 }
 ```
 
@@ -153,11 +154,11 @@ Clear complete deadletter message queue.
 ```go
 err := httpQueue.ClearDeadQueue()
 if err != nil {
-    log.Fatalf("Error clearing the deadletter queue : %v", err)
+    fmt.Printf("Error clearing the deadletter queue : %v", err)
 }
 ```
 
-### Execute/run message queue
+## Execute/run message queue
 
 Execute request queue or dead letter queue(i.e failed HTTP request).
 
@@ -171,10 +172,34 @@ httpQueue.ExecuteQueue()
 
 ### Execute deadletter queue
 
-Execute failed HTTP request message i.e dead letter queue
+Execute failed HTTP request message i.e dead letter queue.
 
 ```go
 httpQueue.ExecuteDeadQueue()
+```
+
+## Fetch message response status
+
+Fetch response body of an given message name, post it's execution.
+
+```go
+status, err := httpQueue.MessageStatus("Place TCS Order")
+if err != nil {
+    fmt.Printf("Error %v", err)
+}
+fmt.Println("Response status : ", status)
+
+```
+
+Sample responses
+
+```
+Response status : {"status":"success","data":{"order_id":"220627001805439"}}
+
+Response status : {"status":"error",
+"message":"Your order price is lower than the current [lower circuit limit]",
+"data":null,"error_type":"InputException"}
+
 ```
 
 ## Sample response
