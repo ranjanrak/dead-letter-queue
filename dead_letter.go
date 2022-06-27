@@ -155,14 +155,6 @@ func (c *Client) RawExecute(msgParam InputMsg, qName string) {
 	c.MessageResponse(msgParam.Name, string(body))
 
 	c.HandleDeadQueue(res, msgParam, qName)
-
-	// Add response body data to redis to be fetched by another worker
-	// To:do- Have better key hash to store successful response
-	successKey := msgParam.Url + msgParam.ReqMethod
-	err = c.redisCli.Set(c.ctx, successKey, string(body), 0).Err()
-	if err != nil {
-		log.Printf("Error updating successKey for request : %v", err)
-	}
 }
 
 // MessageResponse stores response body of the request body
