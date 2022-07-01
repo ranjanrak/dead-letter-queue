@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"fmt"
 	"io"
 	"io/ioutil"
 	"log"
@@ -29,8 +28,8 @@ type InputMsg struct {
 	Name      string
 	Url       string
 	ReqMethod string
-	PostParam map[string]interface{}
-	Headers   map[string]interface{}
+	PostParam url.Values
+	Headers   http.Header
 }
 
 // Client represents interface for redis queue
@@ -115,30 +114,19 @@ func (c *Client) ExecuteQueueName(qName string) {
 
 // RawExecute performs the HTTP request based on request params
 func (c *Client) RawExecute(msgParam InputMsg, qName string) {
-	// Add all POST or PUT params as url.values map
-	postData := url.Values{}
-	if msgParam.PostParam != nil {
-		for key, value := range msgParam.PostParam {
-			valueStr := fmt.Sprintf("%v", value)
-			postData.Add(key, valueStr)
-		}
-	}
 	var postBody io.Reader
 	if msgParam.ReqMethod == "POST" || msgParam.ReqMethod == "PUT" {
-		// convert post params map into “URL encoded” form
-		paramsEncoded := postData.Encode()
-		postBody = bytes.NewReader([]byte(paramsEncoded))
+		// convert post params map into “URL encoded”
+		if msgParam.PostParam != nil {
+			paramsEncoded := msgParam.PostParam.Encode()
+			postBody = bytes.NewReader([]byte(paramsEncoded))
+		}
 	}
 	req, _ := http.NewRequest(msgParam.ReqMethod, msgParam.Url, postBody)
 
 	// Add all request headers to the http request
-	reqHeader := http.Header{}
 	if msgParam.Headers != nil {
-		for name, value := range msgParam.Headers {
-			valueStr := fmt.Sprintf("%v", value)
-			reqHeader.Add(name, valueStr)
-		}
-		req.Header = reqHeader
+		req.Header = msgParam.Headers
 	}
 
 	res, err := http.DefaultClient.Do(req)

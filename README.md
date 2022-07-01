@@ -30,10 +30,11 @@ go get -u github.com/ranjanrak/dead-letter-queue
 package main
 
 import (
-	"net/http"
-	"net/url"
+    "fmt"
+    "net/http"
+    "net/url"
 
-	deadletterqueue "github.com/ranjanrak/dead-letter-queue"
+    deadletterqueue "github.com/ranjanrak/dead-letter-queue"
 )
 func main() {
     // Create new HTTP request queue instance
@@ -43,39 +44,44 @@ func main() {
 		Ctx:       nil,
 		QueueName: "",
 		DeadHTTP:  []int{400, 403, 429, 500, 502},
-	})
+    })
+
+    // Add post params
+    postParam := url.Values{}
+    postParam.Add("exchange", "NSE")
+    postParam.Add("tradingsymbol", "TCS")
+    postParam.Add("transaction_type", "BUY")
+    postParam.Add("quantity", "1")
+    postParam.Add("product", "CNC")
+    postParam.Add("order_type", "MARKET")
+    postParam.Add("validity", "DAY")
+
+    // Add request header
+    var headers http.Header = map[string][]string{}
+    headers.Add("x-kite-version", "3")
+    headers.Add("authorization", "token api_key:access_token")
+    headers.Add("content-type", "application/x-www-form-urlencoded")
+
     // Request message
-    queueMsg := deadletterqueue.InputMsg{
-		Name:      "Place TCS Order",
-		Url:       "https://api.kite.trade/orders/regular",
-		ReqMethod: "POST",
-		PostParam: map[string]interface{}{
-			"exchange":         "NSE",
-			"tradingsymbol":    "TCS",
-			"transaction_type": "BUY",
-			"quantity":         1,
-			"product":          "CNC",
-			"order_type":       "MARKET",
-			"validity":         "DAY",
-		},
-		Headers: map[string]interface{}{
-			"x-kite-version": 3,
-			"authorization":  "token abcd123:efgh1234",
-			"content-type":   "application/x-www-form-urlencoded",
-		},
-	}
+    reqMsgOrd := deadletterqueue.InputMsg{
+        Name:      "Place TCS Order",
+        Url:       "https://api.kite.trade/orders/regular",
+        ReqMethod: "POST",
+        PostParam: postParam,
+        Headers:   headers,
+    }
 
-	// worker that adds message to http queue
-	err := httpQueue.AddMessage(queueMsg)
-	if err != nil {
-		fmt.Printf("Error adding msg in the request queue : %v", err)
-	}
+    // worker that adds message to redis queue
+    err := httpQueue.AddMessage(reqMsgOrd)
+    if err != nil {
+        fmt.Printf("Error adding msg in the request queue : %v", err)
+    }
 
-	// worker that executes http request queues
-	httpQueue.ExecuteQueue()
+    // worker that executes http request queues
+    httpQueue.ExecuteQueue()
 
-	// worker that executes only dead letter http queues
-	httpQueue.ExecuteDeadQueue()
+    // worker that executes dead letter http queues
+    httpQueue.ExecuteDeadQueue()
 }
 ```
 
@@ -85,28 +91,21 @@ Request represents an HTTP request with all parameters.
 
 ### Adding message
 
-Adding an HTTP message to the HTTP queue with all parameters.
+Adding an HTTP message to the request queue with all parameters.
 
 ```go
+// Add request header
+var headers http.Header = map[string][]string{}
+headers.Add("x-kite-version", "3")
+headers.Add("authorization", "token api_key:access_token")
+
 // Request message
 queueMsg := deadletterqueue.InputMsg{
-    Name:      "Place TCS Order",
-    Url:       "https://api.kite.trade/orders/regular",
-    ReqMethod: "POST",
-    PostParam: map[string]interface{}{
-        "exchange":         "NSE",
-        "tradingsymbol":    "TCS",
-        "transaction_type": "BUY",
-        "quantity":         1,
-        "product":          "CNC",
-        "order_type":       "MARKET",
-        "validity":         "DAY",
-    },
-    Headers: map[string]interface{}{
-        "x-kite-version": 3,
-        "authorization":  "token abcd123:efgh1234",
-        "content-type":   "application/x-www-form-urlencoded",
-    },
+    Name:      "Fetch order book",
+    Url:       "https://api.kite.trade/orders",
+    ReqMethod: "GET",
+    PostParam: nil,
+    Headers:   headers,
 }
 err := httpQueue.AddMessage(queueMsg)
 if err != nil {
@@ -116,7 +115,7 @@ if err != nil {
 
 ### Delete message from the request queue
 
-Delete request message available in HTTP queue before it's execution with the input message `Name`.
+Delete request message available in the queue before it's execution with the input message `Name`.
 
 ```go
 err := httpQueue.DeleteReqMsg("Place TCS Order")

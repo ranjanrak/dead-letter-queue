@@ -4,6 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io/ioutil"
+	"net/http"
+	"net/url"
 	"testing"
 
 	"github.com/go-redis/redis/v8"
@@ -33,25 +36,30 @@ func MockRedis() {
 func TestAddMessage(t *testing.T) {
 	// Initialize the mock redis
 	MockRedis()
+
+	// Add post params
+	postParam := url.Values{}
+	postParam.Add("exchange", "NSE")
+	postParam.Add("tradingsymbol", "TCS")
+	postParam.Add("transaction_type", "BUY")
+	postParam.Add("quantity", "1")
+	postParam.Add("product", "CNC")
+	postParam.Add("order_type", "MARKET")
+	postParam.Add("validity", "DAY")
+
+	// Add request header
+	var headers http.Header = map[string][]string{}
+	headers.Add("x-kite-version", "3")
+	headers.Add("authorization", "token api_key:access_token")
+	headers.Add("content-type", "application/x-www-form-urlencoded")
+
 	// Request message
 	reqMsgOrd = InputMsg{
 		Name:      "Place TCS Order",
 		Url:       "https://api.kite.trade/orders/regular",
 		ReqMethod: "POST",
-		PostParam: map[string]interface{}{
-			"exchange":         "NSE",
-			"tradingsymbol":    "TCS",
-			"transaction_type": "BUY",
-			"quantity":         1,
-			"product":          "CNC",
-			"order_type":       "MARKET",
-			"validity":         "DAY",
-		},
-		Headers: map[string]interface{}{
-			"x-kite-version": 3,
-			"authorization":  "token abcd123:efgh1234",
-			"content-type":   "application/x-www-form-urlencoded",
-		},
+		PostParam: postParam,
+		Headers:   headers,
 	}
 	// mock to set reqMsg for AddMessage call
 	mock.ExpectSet("ReqQueue", structToJson([]InputMsg{reqMsgOrd}), 0).SetVal("OK")
@@ -61,19 +69,23 @@ func TestAddMessage(t *testing.T) {
 }
 
 func TestDeleteReqMsg(t *testing.T) {
+	// Add post params
+	postParam := url.Values{}
+	postParam.Add("api_key", "api_key")
+	postParam.Add("request_token", "request_token")
+	postParam.Add("checksum", "checksum")
+
+	// Add request header
+	var headers http.Header = map[string][]string{}
+	headers.Add("x-kite-version", "3")
+
 	// Request message
 	reqMsgSess = InputMsg{
 		Name:      "Post session token",
 		Url:       "https://api.kite.trade/session/token",
 		ReqMethod: "POST",
-		PostParam: map[string]interface{}{
-			"api_key":       "api_key",
-			"request_token": "request_token",
-			"checksum":      "checksum",
-		},
-		Headers: map[string]interface{}{
-			"x-kite-version": 3,
-		},
+		PostParam: postParam,
+		Headers:   headers,
 	}
 	// Add mock to add both reqMsg and reqMsgSess in ReqQueue
 	mock.ExpectGet("ReqQueue").SetVal(string(structToJson([]InputMsg{reqMsgOrd, reqMsgSess})))
@@ -98,6 +110,25 @@ func TestDeleteDeadMsg(t *testing.T) {
 
 	err := cli.DeleteDeadMsg("Place TCS Order")
 	assert.Nil(t, err)
+}
+
+func TestMessageStatus(t *testing.T) {
+	// Load mock response
+	mockOrders, err := ioutil.ReadFile("./mockdata/orderbook_response.json")
+	if err != nil {
+		t.Errorf("Error while fetching orderbook_response. %v", err)
+	}
+	// Mock to fetch request status
+	mock.ExpectGet("Fetch order book").SetVal(string(mockOrders))
+	// Check response status for executed message
+	response, err := cli.MessageStatus("Fetch order book")
+	if err != nil {
+		fmt.Printf("Error %v", err)
+	}
+	var mockStruct map[string]interface{}
+	json.Unmarshal([]byte(response), &mockStruct)
+	//assert
+	assert.Equal(t, mockStruct["status"], "success", "Fetch order book request failed.")
 }
 
 // structToString parses struct to json for redis mock
