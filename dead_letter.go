@@ -80,19 +80,16 @@ func New(userParam ClientParam) *Client {
 
 // AddMessage adds incoming new HTTP request message to redis queue
 func (c *Client) AddMessage(message InputMsg) error {
-	// create/update queue
 	return c.SetQueue(c.queueName, message)
 }
 
-// ExecuteQueue executes all available messages in the normal queue
+// ExecuteQueue executes all available messages in the request queue
 func (c *Client) ExecuteQueue() {
-	// execute only normal queue messages
 	c.ExecuteQueueName(c.queueName)
 }
 
 // ExecuteDeadQueue executes all available messages in the dead queues
 func (c *Client) ExecuteDeadQueue() {
-	// execute only dead letter queue messages
 	for _, deadQue := range c.deadHTTP {
 		c.ExecuteQueueName(strconv.Itoa(deadQue))
 	}
@@ -100,7 +97,7 @@ func (c *Client) ExecuteDeadQueue() {
 
 // ExecuteQueueName is wrapper for RawExecute on qName queue
 func (c *Client) ExecuteQueueName(qName string) {
-	// fetch all messages available in queue
+	// fetch all messages available in the queue
 	msgQueue := c.GetQueue(qName)
 	if len(msgQueue) > 0 {
 		for _, queue := range msgQueue {
@@ -286,7 +283,7 @@ func Find(httpSlice []int, http int) bool {
 	return false
 }
 
-// MarshalStruct
+// Marshalmsg
 func Marshalmsg(msg InputMsg) ([]byte, error) {
 	return json.Marshal(msg)
 }
