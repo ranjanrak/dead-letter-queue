@@ -15,11 +15,10 @@ import (
 )
 
 var (
-	db         *redis.Client
-	mock       redismock.ClientMock
-	cli        Client
-	reqMsgOrd  InputMsg
-	reqMsgSess InputMsg
+	db        *redis.Client
+	mock      redismock.ClientMock
+	cli       Client
+	reqMsgOrd InputMsg
 )
 
 // MockRedis sets redis dbclient and mockclient
@@ -62,7 +61,7 @@ func TestAddMessage(t *testing.T) {
 		Headers:   headers,
 	}
 	// mock to set reqMsg for AddMessage call
-	mock.ExpectSet("ReqQueue", structToJson([]InputMsg{reqMsgOrd}), 0).SetVal("OK")
+	mock.ExpectRPush("ReqQueue", structToJson(reqMsgOrd)).SetVal(1)
 
 	err := cli.AddMessage(reqMsgOrd)
 	assert.Nil(t, err)
@@ -80,33 +79,33 @@ func TestDeleteReqMsg(t *testing.T) {
 	headers.Add("x-kite-version", "3")
 
 	// Request message
-	reqMsgSess = InputMsg{
+	reqMsgSess := InputMsg{
 		Name:      "Post session token",
 		Url:       "https://api.kite.trade/session/token",
 		ReqMethod: "POST",
 		PostParam: postParam,
 		Headers:   headers,
 	}
-	// Add mock to add both reqMsg and reqMsgSess in ReqQueue
-	mock.ExpectGet("ReqQueue").SetVal(string(structToJson([]InputMsg{reqMsgOrd, reqMsgSess})))
-	// Inspect only reqMsgSess message is left post removal of "Place TCS Order" message
-	// from ReqQueue
-	mock.ExpectSet("ReqQueue", structToJson([]InputMsg{reqMsgSess}), 0).SetVal("OK")
+	stringSlice := []string{string(structToJson(reqMsgSess))}
+	mock.ExpectLRange("ReqQueue", 0, -1).SetVal(stringSlice)
 
-	err := cli.DeleteReqMsg("Place TCS Order")
+	mock.ExpectLRem("ReqQueue", 0, structToJson(reqMsgSess)).SetVal(1)
+
+	err := cli.DeleteReqMsg("Post session token")
 	assert.Nil(t, err)
 }
 
 func TestDeleteDeadMsg(t *testing.T) {
 	// Add Get and Set mock for all dead http key
-	mock.ExpectGet("400").SetVal(string(structToJson([]InputMsg{reqMsgOrd, reqMsgSess})))
-	mock.ExpectSet("400", structToJson([]InputMsg{reqMsgSess}), 0).SetVal("OK")
+	stringSlice := []string{string(structToJson(reqMsgOrd))}
+	mock.ExpectLRange("400", 0, -1).SetVal(stringSlice)
+	mock.ExpectLRem("400", 0, structToJson(reqMsgOrd)).SetVal(1)
 
-	mock.ExpectGet("429").SetVal(string(structToJson([]InputMsg{reqMsgOrd, reqMsgSess})))
-	mock.ExpectSet("429", structToJson([]InputMsg{reqMsgSess}), 0).SetVal("OK")
+	mock.ExpectLRange("429", 0, -1).SetVal(stringSlice)
+	mock.ExpectLRem("429", 0, structToJson(reqMsgOrd)).SetVal(1)
 
-	mock.ExpectGet("502").SetVal(string(structToJson([]InputMsg{reqMsgOrd, reqMsgSess})))
-	mock.ExpectSet("502", structToJson([]InputMsg{reqMsgSess}), 0).SetVal("OK")
+	mock.ExpectLRange("502", 0, -1).SetVal(stringSlice)
+	mock.ExpectLRem("502", 0, structToJson(reqMsgOrd)).SetVal(1)
 
 	err := cli.DeleteDeadMsg("Place TCS Order")
 	assert.Nil(t, err)
@@ -132,7 +131,7 @@ func TestMessageStatus(t *testing.T) {
 }
 
 // structToString parses struct to json for redis mock
-func structToJson(msg []InputMsg) []byte {
+func structToJson(msg InputMsg) []byte {
 	jsonMessage, err := json.Marshal(msg)
 	if err != nil {
 		fmt.Printf("%v", err)

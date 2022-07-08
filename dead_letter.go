@@ -23,6 +23,14 @@ type ClientParam struct {
 	DeadHTTP  []int
 }
 
+// Client represents interface for redis queue
+type Client struct {
+	redisCli  *redis.Client
+	queueName string
+	ctx       context.Context
+	deadHTTP  []int
+}
+
 // InputMsg represents input message to be added to queue
 type InputMsg struct {
 	Name      string
@@ -30,14 +38,6 @@ type InputMsg struct {
 	ReqMethod string
 	PostParam url.Values
 	Headers   http.Header
-}
-
-// Client represents interface for redis queue
-type Client struct {
-	redisCli  *redis.Client
-	queueName string
-	ctx       context.Context
-	deadHTTP  []int
 }
 
 // Constants
@@ -80,20 +80,16 @@ func New(userParam ClientParam) *Client {
 
 // AddMessage adds incoming new HTTP request message to redis queue
 func (c *Client) AddMessage(message InputMsg) error {
-	// create/update queue
-	queueMsg := append(c.GetQueue(c.queueName), message)
-	return c.SetQueue(c.queueName, queueMsg)
+	return c.SetQueue(c.queueName, message)
 }
 
-// ExecuteQueue executes all available messages in the normal queue
+// ExecuteQueue executes all available messages in the request queue
 func (c *Client) ExecuteQueue() {
-	// execute only normal queue messages
 	c.ExecuteQueueName(c.queueName)
 }
 
 // ExecuteDeadQueue executes all available messages in the dead queues
 func (c *Client) ExecuteDeadQueue() {
-	// execute only dead letter queue messages
 	for _, deadQue := range c.deadHTTP {
 		c.ExecuteQueueName(strconv.Itoa(deadQue))
 	}
@@ -101,10 +97,10 @@ func (c *Client) ExecuteDeadQueue() {
 
 // ExecuteQueueName is wrapper for RawExecute on qName queue
 func (c *Client) ExecuteQueueName(qName string) {
-	// fetch all messages available in queue
-	queueData := c.GetQueue(qName)
-	if len(queueData) > 0 {
-		for _, queue := range queueData {
+	// fetch all messages available in the queue
+	msgQueue := c.GetQueue(qName)
+	if len(msgQueue) > 0 {
+		for _, queue := range msgQueue {
 			c.RawExecute(queue, qName)
 		}
 	} else {
@@ -113,25 +109,25 @@ func (c *Client) ExecuteQueueName(qName string) {
 }
 
 // RawExecute performs the HTTP request based on request params
-func (c *Client) RawExecute(msgParam InputMsg, qName string) {
+func (c *Client) RawExecute(msg InputMsg, qName string) {
 	var postBody io.Reader
-	if msgParam.ReqMethod == "POST" || msgParam.ReqMethod == "PUT" {
+	if msg.ReqMethod == "POST" || msg.ReqMethod == "PUT" {
 		// convert post params map into “URL encoded”
-		if msgParam.PostParam != nil {
-			paramsEncoded := msgParam.PostParam.Encode()
+		if msg.PostParam != nil {
+			paramsEncoded := msg.PostParam.Encode()
 			postBody = bytes.NewReader([]byte(paramsEncoded))
 		}
 	}
-	req, _ := http.NewRequest(msgParam.ReqMethod, msgParam.Url, postBody)
+	req, _ := http.NewRequest(msg.ReqMethod, msg.Url, postBody)
 
 	// Add all request headers to the http request
-	if msgParam.Headers != nil {
-		req.Header = msgParam.Headers
+	if msg.Headers != nil {
+		req.Header = msg.Headers
 	}
 
 	res, err := http.DefaultClient.Do(req)
 	if err != nil {
-		log.Printf("Error making HTTP request : %v", err)
+		log.Fatalf("Error making HTTP request : %v", err)
 	}
 	defer res.Body.Close()
 
@@ -140,38 +136,36 @@ func (c *Client) RawExecute(msgParam InputMsg, qName string) {
 		log.Printf("Error reading response body %v", err)
 	}
 	// Store response body data
-	c.MessageResponse(msgParam.Name, string(body))
+	c.MessageResponse(msg.Name, string(body))
 
-	c.HandleDeadQueue(res, msgParam, qName)
+	c.HandleDeadQueue(res, msg, qName)
 }
 
 // MessageResponse stores response body of the request body
 func (c *Client) MessageResponse(msgName string, response string) {
 	err := c.redisCli.Set(c.ctx, msgName, response, 0).Err()
 	if err != nil {
-		log.Printf("Error updating response update for the req message %s", msgName)
+		log.Printf("Error updating response for the req message %s", msgName)
 	}
 }
 
 // HandleDeadQueue creates/update dead queue to retry later
-func (c *Client) HandleDeadQueue(res *http.Response, msgParam InputMsg, qName string) {
+func (c *Client) HandleDeadQueue(res *http.Response, msg InputMsg, qName string) {
 	// Create/add dead letter queue based on user input for deadHTTP
 	if Find(c.deadHTTP, res.StatusCode) {
 		// Alert user with failed status for HTTP request
-		log.Printf("Request msg %s, failed with status %s", msgParam.Name, res.Status)
+		log.Printf("Request msg %s, failed with status %s", msg.Name, res.Status)
 		// Add failed messages to dead letter queue
 		qkey := strconv.Itoa(res.StatusCode)
-		deadMsg := append(c.GetQueue(qkey), msgParam)
-		err := c.SetQueue(qkey, deadMsg)
+		err := c.SetQueue(qkey, msg)
 		if err != nil {
-			log.Printf("Error adding dead queue : %v", err)
+			log.Fatalf("Error adding dead queue : %v", err)
 		}
 	}
-	// Delete executed message from queue
-	newQueue := RemoveIndex(c.GetQueue(qName), 0)
-	err := c.SetQueue(qName, newQueue)
+	// Delete executed message from the redis list
+	err := c.redisCli.LTrim(c.ctx, qName, 1, -1).Err()
 	if err != nil {
-		log.Printf("Error adding to %s queue : %v", qName, err)
+		log.Fatalf("Error removing the queue member: %v", err)
 	}
 }
 
@@ -200,13 +194,16 @@ func (c *Client) DeleteDeadMsg(msgName string) error {
 
 // Remove message from the requested queue
 func (c *Client) DelMsg(queName string, msgName string) error {
-	var filterQueue []InputMsg
-	for _, value := range c.GetQueue(queName) {
-		if value.Name != msgName {
-			filterQueue = append(filterQueue, value)
-		}
+	// Fetch message detail with message name
+	msg, err := Marshalmsg(c.MsgDetail(queName, msgName))
+	if err != nil {
+		return err
 	}
-	return c.SetQueue(queName, filterQueue)
+	err = c.redisCli.LRem(c.ctx, queName, 0, msg).Err()
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
 // Clear complete request queue
@@ -236,35 +233,43 @@ func (c *Client) ClearQueue(qName string) error {
 
 // GetQueue fetches all messages in queue
 func (c *Client) GetQueue(qname string) []InputMsg {
-	var queueSlice []InputMsg
-	val, err := c.redisCli.Get(c.ctx, qname).Result()
+	// Fetch redis list
+	queSlice, err := c.redisCli.LRange(c.ctx, qname, 0, -1).Result()
 	if err != nil {
-		// handle empty redis GET
-		if val != "" {
-			log.Printf("Error fetching queue : %v", err)
-		}
+		log.Fatalf("Error fetching queue : %v", err)
 	}
-	err = json.Unmarshal([]byte(val), &queueSlice)
-	return queueSlice
+	// Unmarshal each redis queue message to input message struct
+	var queueStruct []InputMsg
+	for _, queue := range queSlice {
+		queueStruct = append(queueStruct, Unmarshalmsg(queue))
+	}
+	return queueStruct
 }
 
 // SetQueue marshals the input message struct and save it to redis
-func (c *Client) SetQueue(queName string, msg []InputMsg) error {
-	jsonMessage, err := json.Marshal(msg)
+func (c *Client) SetQueue(queName string, msg InputMsg) error {
+	msgInput, err := Marshalmsg(msg)
 	if err != nil {
 		return err
 	}
 	// Set message to given queue name(key)
-	err = c.redisCli.Set(c.ctx, queName, jsonMessage, 0).Err()
+	err = c.redisCli.RPush(c.ctx, queName, msgInput).Err()
 	if err != nil {
 		return err
 	}
 	return nil
 }
 
-// RemoveIndex removes top most item from Queue
-func RemoveIndex(s []InputMsg, index int) []InputMsg {
-	return append(s[:index], s[index+1:]...)
+// Fetch input msg detail
+func (c *Client) MsgDetail(qName string, msgName string) InputMsg {
+	// fetch all messages available in queue
+	msgQueue := c.GetQueue(qName)
+	for _, msg := range msgQueue {
+		if msg.Name == msgName {
+			return msg
+		}
+	}
+	return InputMsg{}
 }
 
 // Find takes a slice and looks for an element in it. If found it will
@@ -276,4 +281,19 @@ func Find(httpSlice []int, http int) bool {
 		}
 	}
 	return false
+}
+
+// Marshalmsg
+func Marshalmsg(msg InputMsg) ([]byte, error) {
+	return json.Marshal(msg)
+}
+
+// Unmarshalmsg
+func Unmarshalmsg(msg string) InputMsg {
+	var msgStruct InputMsg
+	err := json.Unmarshal([]byte(msg), &msgStruct)
+	if err != nil {
+		log.Fatalf("Error unmarshalling %v", err)
+	}
+	return msgStruct
 }

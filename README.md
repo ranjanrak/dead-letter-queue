@@ -30,7 +30,7 @@ go get -u github.com/ranjanrak/dead-letter-queue
 package main
 
 import (
-    "fmt"
+    "log"
     "net/http"
     "net/url"
 
@@ -74,7 +74,7 @@ func main() {
     // worker that adds message to redis queue
     err := httpQueue.AddMessage(reqMsgOrd)
     if err != nil {
-        fmt.Printf("Error adding msg in the request queue : %v", err)
+        log.Fatalf("Error adding msg in the request queue : %v", err)
     }
 
     // worker that executes http request queues
@@ -109,7 +109,7 @@ queueMsg := deadletterqueue.InputMsg{
 }
 err := httpQueue.AddMessage(queueMsg)
 if err != nil {
-    fmt.Printf("Error adding msg in the request queue : %v", err)
+    log.Fatalf("Error adding msg in the request queue : %v", err)
 }
 ```
 
@@ -120,7 +120,7 @@ Delete request message available in the queue before it's execution with the inp
 ```go
 err := httpQueue.DeleteReqMsg("Place TCS Order")
 if err != nil {
-    fmt.Printf("Error removing msg from the request msg queue : %v", err)
+    log.Fatalf("Error removing msg from the request msg queue : %v", err)
 }
 ```
 
@@ -131,7 +131,7 @@ Delete message by the input message `Name` from the Deadletter queue.
 ```go
 err := httpQueue.DeleteDeadMsg("Place TCS Order")
 if err != nil {
-    fmt.Printf("Error removing msg from the deadletter queue : %v", err)
+    log.Fatalf("Error removing msg from the deadletter queue : %v", err)
 }
 ```
 
@@ -142,7 +142,7 @@ Clear complete request message queue.
 ```go
 err := httpQueue.ClearReqQueue()
 if err != nil {
-    fmt.Printf("Error clearing the request queue : %v", err)
+    log.Fatalf("Error clearing the request queue : %v", err)
 }
 ```
 
@@ -153,7 +153,7 @@ Clear complete deadletter message queue.
 ```go
 err := httpQueue.ClearDeadQueue()
 if err != nil {
-    fmt.Printf("Error clearing the deadletter queue : %v", err)
+    log.Fatalf("Error clearing the deadletter queue : %v", err)
 }
 ```
 
@@ -184,9 +184,9 @@ Fetch response body of an given message name, post it's execution.
 ```go
 status, err := httpQueue.MessageStatus("Place TCS Order")
 if err != nil {
-    fmt.Printf("Error %v", err)
+    log.Fatalf("Error %v", err)
 }
-fmt.Println("Response status : ", status)
+log.Printf("Response status %v: ", status)
 
 ```
 
